@@ -2,7 +2,7 @@
 // +----------------------------------------------------------------------
 // | ThinkCMF [ WE CAN DO IT MORE SIMPLE ]
 // +----------------------------------------------------------------------
-// | Copyright (c) 2013-2019 http://www.thinkcmf.com All rights reserved.
+// | Copyright (c) 2013-2018 http://www.thinkcmf.com All rights reserved.
 // +----------------------------------------------------------------------
 // | Licensed ( http://www.apache.org/licenses/LICENSE-2.0 )
 // +----------------------------------------------------------------------
@@ -144,10 +144,20 @@ class UeditorController extends HomeBaseController
         ];
         $date              = date("Ymd");
         $uploadSetting     = cmf_get_upload_setting();
-        $uploadMaxFileSize = $uploadSetting["image"]['upload_max_filesize'];
+        //$uploadMaxFileSize = $uploadSetting["image"]['upload_max_filesize'];
+        //ayumi修复配置数组,编辑远程图片自动本地化
+        $uploadMaxFileSize = $uploadSetting["file_types"]["image"]['upload_max_filesize'];
+
         $uploadMaxFileSize = empty($uploadMaxFileSize) ? 2048 : $uploadMaxFileSize;//默认2M
-        $allowedExts       = explode(',', $uploadSetting["image"]["extensions"]);
-        $strSavePath       = ROOT_PATH . 'public' . DIRECTORY_SEPARATOR . "ueditor" . DIRECTORY_SEPARATOR . $date . DIRECTORY_SEPARATOR;
+        //$allowedExts       = explode(',', $uploadSetting["image"]["extensions"]);
+        //ayumi修复配置数组
+        $allowedExts       = explode(',', $uploadSetting["file_types"]["image"]["extensions"]);
+
+        $strSavePath       = WEB_ROOT . "upload" . DIRECTORY_SEPARATOR . "ueditor" . DIRECTORY_SEPARATOR . $date . DIRECTORY_SEPARATOR;
+
+        //ayumi修复配置数组后缀缺少.
+        $allowedExts = array_map(function(&$a){return '.'.$a;}, $allowedExts);
+
         //远程抓取图片配置
         $config = [
             "savePath"   => $strSavePath,            //保存路径
@@ -155,8 +165,11 @@ class UeditorController extends HomeBaseController
             "maxSize"    => $uploadMaxFileSize                    //文件大小限制，单位KB
         ];
 
-        $storage_setting = cmf_get_cmf_settings('storage');
-        $qiniu_domain    = $storage_setting['Qiniu']['domain'];
+        //$storage_setting = cmf_get_cmf_settings('storage');
+        $storage_setting = cmf_get_option('storage');//ayumi
+
+        //$qiniu_domain    = $storage_setting['Qiniu']['domain'];//ayumi
+        $qiniu_domain = 'xxxx';
         $no_need_domains = [$qiniu_domain];
 
         $list = [];
@@ -182,7 +195,7 @@ class UeditorController extends HomeBaseController
             // is_sae()
 
             if (!cmf_is_sae()) {//SAE下无效
-                $heads = get_headers($imgUrl);
+                $heads = get_headers($imgUrl, 1);//ayumi 设定数组的键名
                 //死链检测
                 if (!(stristr($heads[0], "200") && stristr($heads[0], "OK"))) {
                     $return_img['state'] = $this->stateMap['ERROR_DEAD_LINK'];
@@ -193,7 +206,8 @@ class UeditorController extends HomeBaseController
 
             //格式验证(扩展名验证和Content-Type验证)
             $fileType = strtolower(strrchr($imgUrl, '.'));
-            if (!in_array($fileType, $config['allowFiles']) || stristr($heads['Content-Type'], "image")) {
+
+            if (!in_array($fileType, $config['allowFiles']) || strpos($heads['Content-Type'], "image")===false) {
                 $return_img['state'] = $this->stateMap['ERROR_HTTP_CONTENTTYPE'];
                 array_push($list, $return_img);
                 continue;
@@ -234,15 +248,17 @@ class UeditorController extends HomeBaseController
             $file_write_result = cmf_file_write($tmpName, $img);
 
             if ($file_write_result) {
-                if (config('FILE_UPLOAD_TYPE') == 'Qiniu') {
+
+                if ($storage_setting['type'] == 'Qiniu') {
 
                     //todo qiniu  code
 
                 }
-
-                if (config('FILE_UPLOAD_TYPE') == 'Local') {
-
-                    $file = $strSavePath . $file;
+                //ayumi数据库 增加：
+                //INSERT INTO `cmf_option` ( `autoload`, `option_name`, `option_value`) VALUES ('1', 'storage', '{\"type\":\"Local\"}');
+                if ($storage_setting['type'] == 'Local') {
+                    //$file = $strSavePath . $file;
+                    $file = "/upload/ueditor/" . $date . "/" . $file;
 
                     $return_img['state'] = 'SUCCESS';
                     $return_img['url']   = $file;
